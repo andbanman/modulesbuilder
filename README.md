@@ -9,4 +9,4 @@ import modulesbuilders as mb
 mb.build(...)
 ```
 
-Copywrite and License are covered by LICENSE.txt.
+Copyright and License are covered by LICENSE.txt.
