@@ -1,0 +1,17 @@
+# modulefile.yaml
+# define parameters to create module file
+---
+module:
+  name: gatk
+  version: "4.1.9.0"
+  machine: x86_64
+  binary:
+    - gatk
+  website: https://github.com/broadinstitute/gatk
+  modulefile_help: |
+    Genome Analysis Toolkit (GATK) with Picard tools = GATK4.
+  modulefile_body: |
+    prepend-path PATH $prefix
+  dependencies:
+    - java/12.0.2
+  dockerfile: "Dockerfile.gatk"

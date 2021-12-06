@@ -1,0 +1,36 @@
+ARG OS
+ARG OS_VERS
+FROM alpine:latest
+
+ARG MODULES_PREFIX
+ARG MODULE_VERS
+ARG MODULE_NAME
+
+ENV MODULES_PREFIX $MODULES_PREFIX
+ENV MODULE_VERS $MODULE_VERS
+ENV MODULE_NAME $MODULE_NAME
+
+# confirm environment
+RUN test -n "$MODULES_PREFIX"
+RUN test -n "$MODULE_NAME"
+RUN test -n "$MODULE_VERS"
+
+# create prefix
+RUN mkdir -p $MODULES_PREFIX
+RUN chmod a+w $MODULES_PREFIX
+
+# build
+ENV DOWNLOAD_URL=https://github.com/broadinstitute/gatk/releases/download/$MODULE_VERS/gatk-$MODULE_VERS.zip
+ENV ARCHIVE_COMPRESSED=gatk-$MODULE_VERS.zip
+ENV ARCHIVE_MD5=bb3dd94f666cbf5c9f651a54da503379
+
+RUN wget --quiet "$DOWNLOAD_URL"; \
+    md5=`md5sum "$ARCHIVE_COMPRESSED" | awk '{print $1}'`; \
+    test "$md5" = "$ARCHIVE_MD5"
+RUN unzip "$ARCHIVE_COMPRESSED"
+RUN ls
+
+# install
+CMD rm -rf "$MODULES_PREFIX/sw/$MODULE_NAME/$MODULE_VERS"; \
+    mkdir -p "$MODULES_PREFIX/sw/$MODULE_NAME"; \
+    cp -R "gatk-$MODULE_VERS" "$MODULES_PREFIX/sw/$MODULE_NAME/$MODULE_VERS"
