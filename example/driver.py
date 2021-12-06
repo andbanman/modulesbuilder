@@ -10,7 +10,7 @@ if __name__ == "__main__":
     parser.add_argument("module", help="modulefile config", type=str)
     parser.add_argument("-p", "--prefix", default="/usr/local/Modules",
                         help="modules prefix, the path to mount point")
-    parser.add_argument("-o", "--output-dir", default="build",
+    parser.add_argument("-o", "--output-dir", default="modules",
                         help="build modules in output directory")
     parser.add_argument("-v", "--verbose",
                         help="increase output verbosity",
