@@ -11,7 +11,6 @@ from .modules import *
 
 from colorama import Fore, Back, Style
 
-verbosity = False
 force = False
 modulesPrefix = '/usr/local/Modules'
 
@@ -231,8 +230,7 @@ def writeDockerLogs(logs, logFile):
             except:
                 pass
 
-def build(module, modulePath, moduleDir, modulesPrefix, os_name, os_vers):
-    global verbosity
+def build(module, modulePath, moduleDir, modulesPrefix, os_name, os_vers, verbose=False):
     client = docker.from_env()
 
     path = modulePath
@@ -257,7 +255,7 @@ def build(module, modulePath, moduleDir, modulesPrefix, os_name, os_vers):
 
     # TODO don't rebuild if files exists and force not set
 
-    if verbosity: print("  creating docker image %s" %(tag))
+    if verbose: print("  creating docker image %s" %(tag))
     try:
         # TODO log output stream
         (image, logs) = client.images.build(path=path, tag=tag, dockerfile=dockerfile, buildargs=buildargs, rm=True)
@@ -267,7 +265,7 @@ def build(module, modulePath, moduleDir, modulesPrefix, os_name, os_vers):
         # TODO logs are empty when build throws
         return False
 
-    if verbosity: print("  running docker image %s" %(tag))
+    if verbose: print("  running docker image %s" %(tag))
     try:
         try: os.makedirs(buildPath)
         except FileExistsError: pass
@@ -281,18 +279,20 @@ def build(module, modulePath, moduleDir, modulesPrefix, os_name, os_vers):
     return True
 
 def buildModule(module, path = "modules", prefix = "/usr/local/Modules", verbose = False, force = False, debug = False, target_os = "ubuntu:18.04") :
+    # TODO logic changed from module group to single module ...
+    modules = [module]
     moduleDir = os.path.abspath(path)
     modulePath = os.path.abspath(os.path.dirname(module.config()))
     [os_name, os_vers] = target_os.split(":", 2)
 
     print("Building module %s/%s for %s:%s" %(module.name(), module.version(), os_name, os_vers))
-    buildSucceeded = build(module, modulePath, moduleDir, prefix, os_name, os_vers)
+    buildSucceeded = build(module, modulePath, moduleDir, prefix, os_name, os_vers, verbose=verbose)
     if (buildSucceeded):
-        print("Creating modulefile for %s" %(group))
-        createModulefile(modulesGroups[group], moduleDir, prefix)
+        print("Creating modulefile for %s" %(module.id()))
+        createModulefile(modules, moduleDir, prefix)
         createVersionFile(modules, moduleDir)
     else:
-        print_yellow("skipping modulefile for %s" %(group))
+        print_yellow("skipping modulefile for %s" %(module.id()))
 
 def buildFromConfig(config, path = "modules", prefix = "/usr/local/Modules", verbose = False, force = False, debug = False, target_os = "ubuntu:18.04") :
 
@@ -323,7 +323,7 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--output-dir", default="build",
                         help="build modules in output directory")
     parser.add_argument("-v", "--verbose",
-                        help="increase output verbosity",
+                        help="toggle verbose output",
                         action="store_true")
     parser.add_argument("-f", "--force",
                         help="force rebuild of docker images",
@@ -335,8 +335,8 @@ if __name__ == "__main__":
     modulePath = os.path.dirname(os.path.abspath(yamlFile))
     moduleDir = args.output_dir
     modulesPrefix = args.prefix
-    verbosity = args.verbose
+    verbose = args.verbose
     force = args.force
     os_name = args.os
     os_vers = args.os_vers
-    build(config=yamlFile, path=moduleDir, prefix=modulesPrefix, verbose=verbosity, debug=DEBUG, force=force, target_os="%s:%s"%(os_name,os_vers))
+    build(config=yamlFile, path=moduleDir, prefix=modulesPrefix, verbose=verbose, debug=DEBUG, force=force, target_os="%s:%s"%(os_name,os_vers))
