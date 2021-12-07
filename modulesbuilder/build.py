@@ -71,29 +71,19 @@ def modulefileDependsNoUnload(module, indent):
     return dependStr
 
 # Set the prefix to the root of the module software
-def swPrefix(module):
-    prefix = "set prefix %s/sw/%s/%s\n" % (modulesPrefix, module.name(), module.version())
-    return prefix
-
-# Set the prefix to the root of the module software
-# MODULES_PREFIX is set in the modules environment config
-def modulefilePrefix(module, indent):
-    # virtual envrionment modules don't need a sw prefix
-    if module.type == "virtual":
-        return ""
-    # override definition
+def modulefilePrefix(module, indent, prefix):
     if module.prefix():
-        return indent + module.prefix() + "\n"
+        return indent + "set prefix %s/\n" %(module.prefix())
     else:
-        return indent + swPrefix(module) + "\n"
+        return indent + "set prefix %s/sw/%s/%s\n" %(prefix, module.name(), module.version())
 
-def modulefileBody(module, indent):
+def modulefileBody(module, indent, prefix):
     body = ""
     body += modulefileHelp(module, indent)
     body += modulefileConflicts(module, indent)
     body += modulefileDepends(module, indent)
     body += modulefileDependsNoUnload(module, indent)
-    body += modulefilePrefix(module, indent)
+    body += modulefilePrefix(module, indent, prefix)
     # Set the interior body from configuration
     if module.body:
         lines = module.body().split("\n")
@@ -101,7 +91,7 @@ def modulefileBody(module, indent):
             body += indent + lines[i] + "\n"
     return body
 
-def constructBody(modules, unameValues, unameFields, i, depth, prevModID, string):
+def constructBody(modules, unameValues, unameFields, i, depth, prevModID, string, prefix):
     # string for every indentation
     indent = INDENT
 
@@ -140,10 +130,10 @@ def constructBody(modules, unameValues, unameFields, i, depth, prevModID, string
 
             # Add matching module or descend to the next unameValues field
             if thisModID in modules:
-                string += modulefileBody(modules[thisModID], (depth+1)*indent)
+                string += modulefileBody(modules[thisModID], (depth+1)*indent, prefix)
             else:
                 if DEBUG: print(depth*indent + "descending to next unameValues field")
-                string = constructBody(modules, unameValues, unameFields, i+1, depth+1, thisModID, string)
+                string = constructBody(modules, unameValues, unameFields, i+1, depth+1, thisModID, string, prefix)
 
             # End case block for unameValues field value
             string += (depth)*indent + "}\n"
@@ -152,12 +142,12 @@ def constructBody(modules, unameValues, unameFields, i, depth, prevModID, string
         string += (depth-1)*indent + "}\n"
     else:
         # No unameValues field values, try the next unameValues field
-        string = constructBody(modules, unameValues, unameFields, i+1, depth, prevModID, string)
+        string = constructBody(modules, unameValues, unameFields, i+1, depth, prevModID, string, prefix)
 
     return string
 
 
-def createModulefile(modules, moduleDir):
+def createModulefile(modules, moduleDir, prefix):
     try:
         rootModule = modules[0]
     except:
@@ -195,7 +185,7 @@ def createModulefile(modules, moduleDir):
         if DEBUG: print(modID)
         #print (module)
 
-    body = constructBody(moduleID, unameValues, activeFields, 0, 0, "", "")
+    body = constructBody(moduleID, unameValues, activeFields, 0, 0, "", "", prefix)
 
     # Determine path to modulefile
     modulefileDir = moduleDir + "/modulefiles"
@@ -241,11 +231,9 @@ def writeDockerLogs(logs, logFile):
             except:
                 pass
 
-def buildModule(module, modulePath, moduleDir, modulesPrefix, os_name, os_vers):
+def build(module, modulePath, moduleDir, modulesPrefix, os_name, os_vers):
     global verbosity
     client = docker.from_env()
-
-    print("Building module %s/%s for %s:%s" %(module.name(), module.version(), os_name, os_vers))
 
     path = modulePath
     tag = "module_%s-%s-%s-%s" % (module.name(), module.version(), os_name, os_vers)
@@ -267,9 +255,12 @@ def buildModule(module, modulePath, moduleDir, modulesPrefix, os_name, os_vers):
     try: os.makedirs("%s/log" % buildPath)
     except FileExistsError: pass
 
+    # TODO don't rebuild if files exists and force not set
+
     if verbosity: print("  creating docker image %s" %(tag))
     try:
-        (image, logs) = client.images.build(path=path, tag=tag, dockerfile=dockerfile, buildargs=buildargs)
+        # TODO log output stream
+        (image, logs) = client.images.build(path=path, tag=tag, dockerfile=dockerfile, buildargs=buildargs, rm=True)
         writeDockerLogs(logs, buildLog)
     except docker.errors.BuildError as error:
         print_red("  docker image build failed for module %s/%s: %s" %(module.name(), module.version(), error))
@@ -289,14 +280,23 @@ def buildModule(module, modulePath, moduleDir, modulesPrefix, os_name, os_vers):
 
     return True
 
-def build(config, path = "modules", prefix = "/usr/local/Modules", verbose = False, force = False, debug = False, target_os = "ubuntu:18.04") :
-    global modulesPrefix
-
-    modulesPrefix = prefix
-    modules = getModules(config)
+def buildModule(module, path = "modules", prefix = "/usr/local/Modules", verbose = False, force = False, debug = False, target_os = "ubuntu:18.04") :
     moduleDir = os.path.abspath(path)
-    modulePath = os.path.abspath(os.path.dirname(config))
+    modulePath = os.path.abspath(os.path.dirname(module.config()))
     [os_name, os_vers] = target_os.split(":", 2)
+
+    print("Building module %s/%s for %s:%s" %(module.name(), module.version(), os_name, os_vers))
+    buildSucceeded = build(module, modulePath, moduleDir, prefix, os_name, os_vers)
+    if (buildSucceeded):
+        print("Creating modulefile for %s" %(group))
+        createModulefile(modulesGroups[group], moduleDir, prefix)
+        createVersionFile(modules, moduleDir)
+    else:
+        print_yellow("skipping modulefile for %s" %(group))
+
+def buildFromConfig(config, path = "modules", prefix = "/usr/local/Modules", verbose = False, force = False, debug = False, target_os = "ubuntu:18.04") :
+
+    modules = getModules(config)
 
     # Divide the modules up into their respective name/version
     modulesGroups = dict()
@@ -311,15 +311,8 @@ def build(config, path = "modules", prefix = "/usr/local/Modules", verbose = Fal
 
     # Spin off a single modulefile for each group
     for group in modulesGroups.keys():
-        # do the build here
         for module in modulesGroups[group]:
-            buildSucceeded = buildModule(module, modulePath, moduleDir, modulesPrefix, os_name, os_vers)
-        if (buildSucceeded):
-            print("Creating modulefile for %s" %(group))
-            createModulefile(modulesGroups[group], moduleDir)
-            createVersionFile(modules, moduleDir)
-        else:
-            print_yellow("skipping modulefile for %s" %(group))
+            buildModule(module, path, prefix, verbose, force, debug, target_os)
 
 if __name__ == "__main__":
 

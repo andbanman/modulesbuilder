@@ -181,6 +181,12 @@ class Module:
             depends.sort()
         return depends
 
+    def config(self):
+        if 'config' in self.yml:
+            return self.yml['config']
+        else:
+            return ""
+
     # Files associated with self.yml definition and build
     def files(self):
         files = []
