@@ -235,7 +235,7 @@ def build(module, modulePath, moduleDir, modulesPrefix, os_name, os_vers, verbos
     cli = docker.APIClient()
 
     path = modulePath
-    tag = "module_%s-%s-%s-%s" % (module.name(), module.version(), os_name, os_vers)
+    tag = ("module_%s-%s-%s-%s" % (module.name(), module.version(), os_name, os_vers)).lower()
     dockerfile = "%s/%s" % (path, module.dockerfile())
     user = "%d:%d" % (os.getuid(), os.getgid())
     buildPath = os.path.abspath(moduleDir)
