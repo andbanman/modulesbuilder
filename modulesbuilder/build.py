@@ -232,14 +232,14 @@ def writeDockerLogs(logs, logFile):
 
 def build(module, modulePath, moduleDir, modulesPrefix, os_name, os_vers, verbose=False):
     client = docker.from_env()
+    cli = docker.APIClient()
 
     path = modulePath
     tag = "module_%s-%s-%s-%s" % (module.name(), module.version(), os_name, os_vers)
     dockerfile = "%s/%s" % (path, module.dockerfile())
     user = "%d:%d" % (os.getuid(), os.getgid())
     buildPath = os.path.abspath(moduleDir)
-    buildLog = "%s/log/%s_docker-build.log" %(buildPath, tag)
-    runLog = "%s/log/%s_docker-run.log" %(buildPath, tag)
+    logFile = "%s/log/%s.log" %(buildPath, tag)
 
     logs = []
     buildargs = dict()
@@ -249,31 +249,31 @@ def build(module, modulePath, moduleDir, modulesPrefix, os_name, os_vers, verbos
     buildargs['OS'] = os_name
     buildargs['OS_VERS'] = os_vers
 
-    # make logfile dir
+    # open log file
     try: os.makedirs("%s/log" % buildPath)
     except FileExistsError: pass
+    f = open(logFile, 'w')
 
     # TODO don't rebuild if files exists and force not set
 
     if verbose: print("  creating docker image %s" %(tag))
+    response = [f.write(line.decode("utf-8")) for line in cli.build(path=path, tag=tag, dockerfile=dockerfile, buildargs=buildargs, rm=True)]
     try:
-        # TODO log output stream
-        (image, logs) = client.images.build(path=path, tag=tag, dockerfile=dockerfile, buildargs=buildargs, rm=True)
-        writeDockerLogs(logs, buildLog)
-    except docker.errors.BuildError as error:
-        print_red("  docker image build failed for module %s/%s: %s" %(module.name(), module.version(), error))
-        # TODO logs are empty when build throws
-        return False
-
-    if verbose: print("  running docker image %s" %(tag))
-    try:
+        image = client.images.get(tag)
+        if verbose: print("  running docker image %s" %(tag))
         try: os.makedirs(buildPath)
         except FileExistsError: pass
-        logs = client.containers.run(image, volumes=["%s:%s" %(buildPath, modulesPrefix)], user=user)
-        writeDockerLogs(logs, runLog)
-    except docker.errors.ContainerError as error:
-        print_red("  build failed for module %s/%s: %s" %(module.name(), module.version(), error))
-        # TODO logs are empty when build throws
+        container = cli.create_container(tag, volumes=["%s:%s" %(buildPath, modulesPrefix)], user=user)
+        cli.start(container.get("Id"))
+        logs = cli.logs(container.get("Id"), follow=True, stream=True)
+        for log in logs:
+            f.write(log.decode("utf-8"))
+        ret = cli.wait(container.get("Id"))
+        if (ret.get('StatusCode') != 0):
+            print_red("  build failed for module %s/%s, see log file %s" %(module.name(), module.version(), logFile))
+            return False
+    except docker.errors.ImageNotFound as error:
+        print_red("  docker image build failed for module %s/%s: %s" %(module.name(), module.version(), error))
         return False
 
     return True
