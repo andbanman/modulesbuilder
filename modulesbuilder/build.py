@@ -230,7 +230,7 @@ def writeDockerLogs(logs, logFile):
             except:
                 pass
 
-def build(module, modulePath, moduleDir, modulesPrefix, os_name, os_vers, verbose=False):
+def build(module, modulePath, buildPath, modulesPrefix, os_name, os_vers, verbose=False):
     client = docker.from_env()
     cli = docker.APIClient()
 
@@ -238,7 +238,6 @@ def build(module, modulePath, moduleDir, modulesPrefix, os_name, os_vers, verbos
     tag = ("module_%s-%s-%s-%s" % (module.name(), module.version(), os_name, os_vers)).lower()
     dockerfile = "%s/%s" % (path, module.dockerfile())
     user = "%d:%d" % (os.getuid(), os.getgid())
-    buildPath = os.path.abspath(moduleDir)
     logFile = "%s/log/%s.log" %(buildPath, tag)
 
     logs = []
@@ -257,13 +256,16 @@ def build(module, modulePath, moduleDir, modulesPrefix, os_name, os_vers, verbos
     # TODO don't rebuild if files exists and force not set
 
     if verbose: print("  creating docker image %s" %(tag))
-    response = [f.write(line.decode("utf-8")) for line in cli.build(path=path, tag=tag, dockerfile=dockerfile, buildargs=buildargs, rm=True)]
+    # TODO print stream content
+    response = [f.write(line.decode("utf-8")) for line in cli.build(path=path,
+        tag=tag, dockerfile=dockerfile, buildargs=buildargs, rm=True)]
     try:
         image = client.images.get(tag)
         if verbose: print("  running docker image %s" %(tag))
         try: os.makedirs(buildPath)
         except FileExistsError: pass
-        container = cli.create_container(tag, volumes=["%s:%s" %(buildPath, modulesPrefix)], user=user)
+        host_config = client.api.create_host_config(binds={ buildPath: { 'bind': modulesPrefix, 'mode': 'rw', } })
+        container = cli.create_container(tag, user=user, volumes=[modulesPrefix], host_config=host_config)
         cli.start(container.get("Id"))
         logs = cli.logs(container.get("Id"), follow=True, stream=True)
         for log in logs:
@@ -281,16 +283,16 @@ def build(module, modulePath, moduleDir, modulesPrefix, os_name, os_vers, verbos
 def buildModule(module, path = "modules", prefix = "/usr/local/Modules", verbose = False, force = False, debug = False, target_os = "ubuntu:18.04") :
     # TODO logic changed from module group to single module ...
     modules = [module]
-    moduleDir = os.path.abspath(path)
+    buildPath = os.path.abspath(path)
     modulePath = os.path.abspath(os.path.dirname(module.config()))
     [os_name, os_vers] = target_os.split(":", 2)
 
     print("Building module %s/%s for %s:%s" %(module.name(), module.version(), os_name, os_vers))
-    buildSucceeded = build(module, modulePath, moduleDir, prefix, os_name, os_vers, verbose=verbose)
+    buildSucceeded = build(module, modulePath, buildPath, prefix, os_name, os_vers, verbose=verbose)
     if (buildSucceeded):
         print("Creating modulefile for %s" %(module.id()))
-        createModulefile(modules, moduleDir, prefix)
-        createVersionFile(modules, moduleDir)
+        createModulefile(modules, buildPath, prefix)
+        createVersionFile(modules, buildPath)
     else:
         print_yellow("skipping modulefile for %s" %(module.id()))
 
