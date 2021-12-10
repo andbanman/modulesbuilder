@@ -266,11 +266,13 @@ def build(module, modulePath, buildPath, modulesPrefix, os_name, os_vers, verbos
         except FileExistsError: pass
         host_config = client.api.create_host_config(binds={ buildPath: { 'bind': modulesPrefix, 'mode': 'rw', } })
         container = cli.create_container(tag, user=user, volumes=[modulesPrefix], host_config=host_config)
-        cli.start(container.get("Id"))
-        logs = cli.logs(container.get("Id"), follow=True, stream=True)
+        containerID = container.get("Id")
+        cli.start(containerID)
+        logs = cli.logs(containerID, follow=True, stream=True)
         for log in logs:
             f.write(log.decode("utf-8"))
-        ret = cli.wait(container.get("Id"))
+        ret = cli.wait(containerID)
+        cli.remove_container(containerID)
         if (ret.get('StatusCode') != 0):
             print_red("  build failed for module %s/%s, see log file %s" %(module.name(), module.version(), logFile))
             return False
@@ -280,21 +282,15 @@ def build(module, modulePath, buildPath, modulesPrefix, os_name, os_vers, verbos
 
     return True
 
+def buildModulefile(modules, path = "modules", prefix = "/usr/local/Modules", verbose = False, force = False, debug = False, target_os = "ubuntu:18.04") :
+    createModulefile(modules, path, prefix)
+    createVersionFile(modules, path)
+
 def buildModule(module, path = "modules", prefix = "/usr/local/Modules", verbose = False, force = False, debug = False, target_os = "ubuntu:18.04") :
-    # TODO logic changed from module group to single module ...
-    modules = [module]
     buildPath = os.path.abspath(path)
     modulePath = os.path.abspath(os.path.dirname(module.config()))
     [os_name, os_vers] = target_os.split(":", 2)
-
-    print("Building module %s/%s for %s:%s" %(module.name(), module.version(), os_name, os_vers))
     buildSucceeded = build(module, modulePath, buildPath, prefix, os_name, os_vers, verbose=verbose)
-    if (buildSucceeded):
-        print("Creating modulefile for %s" %(module.id()))
-        createModulefile(modules, buildPath, prefix)
-        createVersionFile(modules, buildPath)
-    else:
-        print_yellow("skipping modulefile for %s" %(module.id()))
 
 def buildFromConfig(config, path = "modules", prefix = "/usr/local/Modules", verbose = False, force = False, debug = False, target_os = "ubuntu:18.04") :
 
@@ -315,6 +311,8 @@ def buildFromConfig(config, path = "modules", prefix = "/usr/local/Modules", ver
     for group in modulesGroups.keys():
         for module in modulesGroups[group]:
             buildModule(module, path, prefix, verbose, force, debug, target_os)
+        # only each group needs a modulefile
+        buildModulefile(group, path, prefix, verbose, force, debug, target_os)
 
 if __name__ == "__main__":
 
