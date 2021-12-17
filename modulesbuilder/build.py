@@ -5,6 +5,7 @@ import sys
 import os
 import docker
 import json
+import re
 
 from .module import unameFields, INDENT
 from .modules import *
@@ -230,9 +231,15 @@ def writeDockerLogs(logs, logFile):
             except:
                 pass
 
+
 def dockerWriteLog(data, f):
+    line = dockerLogString(data)
+    f.write(line)
+    return line
+
+def dockerLogString(data):
     try:
-        return f.write(json.loads(data,encoding="utf-8")['stream'])
+        return json.loads(data,encoding="utf-8")['stream']
     except:
         return ""
 
@@ -263,6 +270,16 @@ def build(module, modulePath, buildPath, modulesPrefix, os_name, os_vers, verbos
 
     if verbose: print("  creating docker image %s" %(tag))
     response = [dockerWriteLog(line, f) for line in cli.build(path=path, tag=tag, dockerfile=dockerfile, buildargs=buildargs, rm=True)]
+
+    # TODO not catching build errors
+    regex = re.compile('^Successfully built.*')
+    lastLine = response[-2] #TODO this is a bit cludgy
+    print(lastLine)
+    if regex.match(lastLine) == None:
+        print_red("  docker image build failed for module %s/%s: %s" %(
+            module.name(), module.version(), lastLine))
+        return False
+
     try:
         image = client.images.get(tag)
         if verbose: print("  running docker image %s" %(tag))
