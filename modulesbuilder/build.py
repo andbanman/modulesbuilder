@@ -230,6 +230,12 @@ def writeDockerLogs(logs, logFile):
             except:
                 pass
 
+def dockerWriteLog(data, f):
+    try:
+        return f.write(json.loads(data,encoding="utf-8")['stream'])
+    except:
+        return ""
+
 def build(module, modulePath, buildPath, modulesPrefix, os_name, os_vers, verbose=False):
     client = docker.from_env()
     cli = docker.APIClient()
@@ -256,9 +262,7 @@ def build(module, modulePath, buildPath, modulesPrefix, os_name, os_vers, verbos
     # TODO don't rebuild if files exists and force not set
 
     if verbose: print("  creating docker image %s" %(tag))
-    # TODO print stream content
-    response = [f.write(line.decode("utf-8")) for line in cli.build(path=path,
-        tag=tag, dockerfile=dockerfile, buildargs=buildargs, rm=True)]
+    response = [dockerWriteLog(line, f) for line in cli.build(path=path, tag=tag, dockerfile=dockerfile, buildargs=buildargs, rm=True)]
     try:
         image = client.images.get(tag)
         if verbose: print("  running docker image %s" %(tag))
