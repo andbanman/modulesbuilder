@@ -147,7 +147,7 @@ def constructBody(modules, unameValues, unameFields, i, depth, prevModID, string
     return string
 
 
-def createModulefile(modules, moduleDir, prefix):
+def createModulefile(modules, moduleDir, prefix, force=False, verbose=False):
     try:
         rootModule = modules[0]
     except:
@@ -197,12 +197,14 @@ def createModulefile(modules, moduleDir, prefix):
         os.makedirs(modulefileDir)
     except FileExistsError:
         pass # do nothing
+    if (~force & os.path.exists(modulefile)):
+        raise Exception("Modulefile '%s' exists, set force=True to overwrite" % modulefile)
     f = open(modulefile, "w+")
     f.write(modulefileHeader(modules[0]))
     f.write(body)
     f.close()
 
-def createVersionFile(modules, moduleDir):
+def createVersionFile(modules, moduleDir, force=False, verbose=False):
     defaults = dict()
     for module in modules:
         if module.defaultVersion():
@@ -218,7 +220,10 @@ def createVersionFile(modules, moduleDir):
             pass # do nothing
         versionFile = "%s/.version" % (modulefileDir)
         versionStr = "#%%Module##\nmodule-version %s default\n" %(defaults[name])
-        print("Creating version file %s" % versionFile)
+        if (~force & os.path.exists(versionFile)):
+            raise Exception("Version file '%s' exists, set force=True to overwrite" % versionFile)
+        if (verbose):
+            print("Creating version file %s" % versionFile)
         f = open(versionFile, "w+")
         f.write(versionStr)
         f.close()
@@ -243,7 +248,7 @@ def dockerLogString(data):
     except:
         return ""
 
-def build(module, modulePath, buildPath, modulesPrefix, os_name, os_vers, verbose=False):
+def build(module, modulePath, buildPath, modulesPrefix, os_name, os_vers, verbose=False, force=False):
     client = docker.from_env()
     cli = docker.APIClient()
 
@@ -266,7 +271,9 @@ def build(module, modulePath, buildPath, modulesPrefix, os_name, os_vers, verbos
     except FileExistsError: pass
     f = open(logFile, 'w')
 
-    # TODO don't rebuild if files exists and force not set
+    moduleBuildPath = "%s/sw/%s/%s" % (buildPath, module.name(), module.version())
+    if (~force & os.path.exists(moduleBuildPath)):
+        raise Exception("Module '%s' exists, set force=True to overwrite" % moduleBuildPath)
 
     if verbose: print("  creating docker image %s" %(tag))
     response = [dockerWriteLog(line, f) for line in cli.build(path=path, tag=tag, dockerfile=dockerfile, buildargs=buildargs, rm=True)]
@@ -274,7 +281,7 @@ def build(module, modulePath, buildPath, modulesPrefix, os_name, os_vers, verbos
     # TODO not catching build errors
     regex = re.compile('^Successfully built.*')
     lastLine = response[-2] #TODO this is a bit cludgy
-    print(lastLine)
+    #print(response)
     if regex.match(lastLine) == None:
         print_red("  docker image build failed for module %s/%s: %s" %(
             module.name(), module.version(), lastLine))
@@ -304,14 +311,14 @@ def build(module, modulePath, buildPath, modulesPrefix, os_name, os_vers, verbos
     return True
 
 def buildModulefile(modules, path = "modules", prefix = "/usr/local/Modules", verbose = False, force = False, debug = False, target_os = "ubuntu:18.04") :
-    createModulefile(modules, path, prefix)
-    createVersionFile(modules, path)
+    createModulefile(modules, path, prefix, force=force)
+    createVersionFile(modules, path, force=force)
 
 def buildModule(module, path = "modules", prefix = "/usr/local/Modules", verbose = False, force = False, debug = False, target_os = "ubuntu:18.04") :
     buildPath = os.path.abspath(path)
     modulePath = os.path.abspath(os.path.dirname(module.config()))
     [os_name, os_vers] = target_os.split(":", 2)
-    buildSucceeded = build(module, modulePath, buildPath, prefix, os_name, os_vers, verbose=verbose)
+    buildSucceeded = build(module, modulePath, buildPath, prefix, os_name, os_vers, verbose=verbose, force=force)
 
 def buildFromConfig(config, path = "modules", prefix = "/usr/local/Modules", verbose = False, force = False, debug = False, target_os = "ubuntu:18.04") :
 
