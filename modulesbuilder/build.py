@@ -257,10 +257,13 @@ def build(module, modulePath, buildPath, modulesPrefix, os_name, os_vers, verbos
     dockerfile = "%s/%s" % (path, module.dockerfile())
     user = "%d:%d" % (os.getuid(), os.getgid())
     logFile = "%s/log/%s.log" %(buildPath, tag)
+    moduleBuildPath = "%s/sw/%s/%s" % (buildPath, module.name(), module.version())
+    moduleInstallPath = "%s/sw/%s/%s" % (modulesPrefix, module.name(), module.version())
 
     logs = []
     buildargs = dict()
     buildargs['MODULES_PREFIX'] = modulesPrefix
+    buildargs['MODULE_PATH'] = moduleInstallPath
     buildargs['MODULE_NAME'] = module.name()
     buildargs['MODULE_VERS'] = module.version()
     buildargs['OS'] = os_name
@@ -271,7 +274,6 @@ def build(module, modulePath, buildPath, modulesPrefix, os_name, os_vers, verbos
     except FileExistsError: pass
     f = open(logFile, 'w')
 
-    moduleBuildPath = "%s/sw/%s/%s" % (buildPath, module.name(), module.version())
     if (~force & os.path.exists(moduleBuildPath)):
         raise Exception("Module '%s' exists, set force=True to overwrite" % moduleBuildPath)
 
@@ -292,7 +294,9 @@ def build(module, modulePath, buildPath, modulesPrefix, os_name, os_vers, verbos
         if verbose: print("  running docker image %s" %(tag))
         try: os.makedirs(buildPath)
         except FileExistsError: pass
-        host_config = client.api.create_host_config(binds={ buildPath: { 'bind': modulesPrefix, 'mode': 'rw', } })
+        host_config = client.api.create_host_config(binds={
+            buildPath: { 'bind': modulesPrefix, 'mode': 'ro', },
+            moduleBuildPath: { 'bind': moduleInstallPath, 'mode': 'rw', } })
         container = cli.create_container(tag, user=user, volumes=[modulesPrefix], host_config=host_config)
         containerID = container.get("Id")
         cli.start(containerID)
