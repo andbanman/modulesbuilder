@@ -248,7 +248,7 @@ def dockerLogString(data):
     except:
         return ""
 
-def build(module, modulePath, buildPath, modulesPrefix, os_name, os_vers, verbose=False, force=False):
+def build(module, modulePath, buildPath, modulesPrefix, target, verbose=False, force=False):
     client = docker.from_env()
     cli = docker.APIClient()
 
@@ -266,8 +266,7 @@ def build(module, modulePath, buildPath, modulesPrefix, os_name, os_vers, verbos
     buildargs['MODULE_PATH'] = moduleInstallPath
     buildargs['MODULE_NAME'] = module.name()
     buildargs['MODULE_VERS'] = module.version()
-    buildargs['OS'] = os_name
-    buildargs['OS_VERS'] = os_vers
+    buildargs['TARGET'] = target
 
     # open log file
     try: os.makedirs("%s/log" % buildPath)
@@ -360,8 +359,7 @@ if __name__ == "__main__":
     parser.add_argument("-f", "--force",
                         help="force rebuild of docker images",
                         action="store_true")
-    parser.add_argument("--os", help="target os name", default="ubuntu")
-    parser.add_argument("--os-vers", help="target os version", default="16.04")
+    parser.add_argument("-t", "--target", help="target os", default="ubuntu:16.04")
     args = parser.parse_args()
     yamlFile = args.module
     modulePath = os.path.dirname(os.path.abspath(yamlFile))
@@ -369,6 +367,5 @@ if __name__ == "__main__":
     modulesPrefix = args.prefix
     verbose = args.verbose
     force = args.force
-    os_name = args.os
-    os_vers = args.os_vers
-    build(config=yamlFile, path=moduleDir, prefix=modulesPrefix, verbose=verbose, debug=DEBUG, force=force, target_os="%s:%s"%(os_name,os_vers))
+    target = args.target
+    build(config=yamlFile, path=moduleDir, prefix=modulesPrefix, verbose=verbose, debug=DEBUG, force=force, target=target))
