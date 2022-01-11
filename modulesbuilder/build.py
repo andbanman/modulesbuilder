@@ -13,6 +13,12 @@ from .modules import *
 
 from colorama import Fore, Back, Style
 
+class ModuleExistsError(FileExistsError):
+    pass
+
+class ModulefileExistsError(FileExistsError):
+    pass
+
 force = False
 modulesPrefix = '/usr/local/Modules'
 
@@ -199,7 +205,7 @@ def createModulefile(modules, moduleDir, prefix, force=False, verbose=False):
     except FileExistsError:
         pass # do nothing
     if (~force & os.path.exists(modulefile)):
-        raise Exception("Modulefile '%s' exists, set force=True to overwrite" % modulefile)
+        raise ModulefileExistsError("Modulefile '%s' exists, set force=True to overwrite" % modulefile)
     f = open(modulefile, "w+")
     f.write(modulefileHeader(modules[0]))
     f.write(body)
@@ -222,7 +228,7 @@ def createVersionFile(modules, moduleDir, force=False, verbose=False):
         versionFile = "%s/.version" % (modulefileDir)
         versionStr = "#%%Module##\nmodule-version %s default\n" %(defaults[name])
         if (~force & os.path.exists(versionFile)):
-            raise Exception("Version file '%s' exists, set force=True to overwrite" % versionFile)
+            raise ModulefileExistsError("Version file '%s' exists, set force=True to overwrite" % versionFile)
         if (verbose):
             print("Creating version file %s" % versionFile)
         f = open(versionFile, "w+")
@@ -247,7 +253,7 @@ def dockerLogString(data):
     try:
         return json.loads(data,encoding="utf-8")['stream']
     except:
-        return ""
+        return json.dumps(json.loads(data,encoding="utf-8"))
 
 def build(module, modulePath, buildPath, modulesPrefix, target, verbose=False, force=False):
     client = docker.from_env()
@@ -278,7 +284,7 @@ def build(module, modulePath, buildPath, modulesPrefix, target, verbose=False, f
         if (force):
             shutil.rmtree(moduleBuildPath)
         else:
-            raise Exception("Module '%s' exists, set force=True to overwrite" % moduleBuildPath)
+            raise ModuleExistsError("Module '%s' exists, set force=True to overwrite" % moduleBuildPath)
 
     if verbose: print("  creating docker image %s" %(tag))
     response = [dockerWriteLog(line, f) for line in cli.build(path=path, tag=tag, dockerfile=dockerfile, buildargs=buildargs, rm=True)]
