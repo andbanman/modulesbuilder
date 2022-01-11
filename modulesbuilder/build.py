@@ -3,6 +3,7 @@
 import yaml
 import sys
 import os
+import shutil
 import docker
 import json
 import re
@@ -198,7 +199,7 @@ def createModulefile(modules, moduleDir, prefix, force=False, verbose=False):
     except FileExistsError:
         pass # do nothing
     if (~force & os.path.exists(modulefile)):
-        raise Exception("Modulefile '%s' exists, set force=True to overwrite" % modulefile)
+        raise FileExistsError("Modulefile '%s' exists, set force=True to overwrite" % modulefile)
     f = open(modulefile, "w+")
     f.write(modulefileHeader(modules[0]))
     f.write(body)
@@ -221,7 +222,7 @@ def createVersionFile(modules, moduleDir, force=False, verbose=False):
         versionFile = "%s/.version" % (modulefileDir)
         versionStr = "#%%Module##\nmodule-version %s default\n" %(defaults[name])
         if (~force & os.path.exists(versionFile)):
-            raise Exception("Version file '%s' exists, set force=True to overwrite" % versionFile)
+            raise FileExistsError("Version file '%s' exists, set force=True to overwrite" % versionFile)
         if (verbose):
             print("Creating version file %s" % versionFile)
         f = open(versionFile, "w+")
@@ -253,7 +254,7 @@ def build(module, modulePath, buildPath, modulesPrefix, target, verbose=False, f
     cli = docker.APIClient()
 
     path = modulePath
-    tag = ("module_%s-%s-%s-%s" % (module.name(), module.version(), os_name, os_vers)).lower()
+    tag = ("module_%s-%s-%s" % (module.name(), module.version(), target.replace(":","-"))).lower()
     dockerfile = "%s/%s" % (path, module.dockerfile())
     user = "%d:%d" % (os.getuid(), os.getgid())
     logFile = "%s/log/%s.log" %(buildPath, tag)
@@ -273,8 +274,11 @@ def build(module, modulePath, buildPath, modulesPrefix, target, verbose=False, f
     except FileExistsError: pass
     f = open(logFile, 'w')
 
-    if (~force & os.path.exists(moduleBuildPath)):
-        raise Exception("Module '%s' exists, set force=True to overwrite" % moduleBuildPath)
+    if (os.path.exists(moduleBuildPath)):
+        if (force):
+            shutil.rmtree(moduleBuildPath)
+        else:
+            raise FileExistsError("Module '%s' exists, set force=True to overwrite" % moduleBuildPath)
 
     if verbose: print("  creating docker image %s" %(tag))
     response = [dockerWriteLog(line, f) for line in cli.build(path=path, tag=tag, dockerfile=dockerfile, buildargs=buildargs, rm=True)]
@@ -293,10 +297,12 @@ def build(module, modulePath, buildPath, modulesPrefix, target, verbose=False, f
         if verbose: print("  running docker image %s" %(tag))
         try: os.makedirs(buildPath)
         except FileExistsError: pass
+        try: os.makedirs(moduleBuildPath)
+        except FileExistsError: pass
         host_config = client.api.create_host_config(binds={
             buildPath: { 'bind': modulesPrefix, 'mode': 'ro', },
             moduleBuildPath: { 'bind': moduleInstallPath, 'mode': 'rw', } })
-        container = cli.create_container(tag, user=user, volumes=[modulesPrefix], host_config=host_config)
+        container = cli.create_container(tag, user=user, volumes=[modulesPrefix, moduleBuildPath], host_config=host_config)
         containerID = container.get("Id")
         cli.start(containerID)
         logs = cli.logs(containerID, follow=True, stream=True)
@@ -308,22 +314,23 @@ def build(module, modulePath, buildPath, modulesPrefix, target, verbose=False, f
             print_red("  build failed for module %s/%s, see log file %s" %(module.name(), module.version(), logFile))
             return False
     except docker.errors.ImageNotFound as error:
+        if (os.path.exists(moduleBuildPath)): os.remove(moduleBuildPath)
+        shutil.rmtree(moduleBuildPath)
         print_red("  docker image build failed for module %s/%s: %s" %(module.name(), module.version(), error))
         return False
 
     return True
 
-def buildModulefile(modules, path = "modules", prefix = "/usr/local/Modules", verbose = False, force = False, debug = False, target_os = "ubuntu:18.04") :
+def buildModulefile(modules, path = "modules", prefix = "/usr/local/Modules", verbose = False, force = False, debug = False, target = "ubuntu:18.04") :
     createModulefile(modules, path, prefix, force=force)
     createVersionFile(modules, path, force=force)
 
-def buildModule(module, path = "modules", prefix = "/usr/local/Modules", verbose = False, force = False, debug = False, target_os = "ubuntu:18.04") :
+def buildModule(module, path = "modules", prefix = "/usr/local/Modules", verbose = False, force = False, debug = False, target = "ubuntu:18.04") :
     buildPath = os.path.abspath(path)
     modulePath = os.path.abspath(os.path.dirname(module.config()))
-    [os_name, os_vers] = target_os.split(":", 2)
-    buildSucceeded = build(module, modulePath, buildPath, prefix, os_name, os_vers, verbose=verbose, force=force)
+    buildSucceeded = build(module, modulePath, buildPath, prefix, target=target, verbose=verbose, force=force)
 
-def buildFromConfig(config, path = "modules", prefix = "/usr/local/Modules", verbose = False, force = False, debug = False, target_os = "ubuntu:18.04") :
+def buildFromConfig(config, path = "modules", prefix = "/usr/local/Modules", verbose = False, force = False, debug = False, target = "ubuntu:18.04") :
 
     modules = getModules(config)
 
@@ -341,9 +348,9 @@ def buildFromConfig(config, path = "modules", prefix = "/usr/local/Modules", ver
     # Spin off a single modulefile for each group
     for group in modulesGroups.keys():
         for module in modulesGroups[group]:
-            buildModule(module, path, prefix, verbose, force, debug, target_os)
+            buildModule(module, path, prefix, verbose, force, debug, target)
         # only each group needs a modulefile
-        buildModulefile(group, path, prefix, verbose, force, debug, target_os)
+        buildModulefile(group, path, prefix, verbose, force, debug, target)
 
 if __name__ == "__main__":
 
@@ -368,4 +375,4 @@ if __name__ == "__main__":
     verbose = args.verbose
     force = args.force
     target = args.target
-    build(config=yamlFile, path=moduleDir, prefix=modulesPrefix, verbose=verbose, debug=DEBUG, force=force, target=target))
+    build(config=yamlFile, path=moduleDir, prefix=modulesPrefix, verbose=verbose, debug=DEBUG, force=force, target=target)
